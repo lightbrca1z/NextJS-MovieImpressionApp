@@ -133,12 +133,12 @@ export async function importMoviesFromCsv(
   }
 
   let added = 0
-  await prisma.$transaction(async (tx) => {
-    for (const title of titles) {
-      await createMovieRecord(title, tx)
-      added++
-    }
-  })
+  // 長大なインタラクティブ TX は Vercel / プーラーでタイムアウトし
+  // 「Transaction not found」になるため、逐次コミットにする
+  for (const title of titles) {
+    await createMovieRecord(title, prisma)
+    added++
+  }
 
   revalidateMovieLists()
   return {
@@ -176,14 +176,12 @@ export async function repairNonAsciiMovieSlugs(
   })
 
   let fixed = 0
-  await prisma.$transaction(async (tx) => {
-    for (const m of rows) {
-      if (isAsciiUrlSlug(m.slug)) continue
-      const newSlug = await allocateMovieSlug(m.title, tx)
-      await tx.movie.update({ where: { id: m.id }, data: { slug: newSlug } })
-      fixed++
-    }
-  })
+  for (const m of rows) {
+    if (isAsciiUrlSlug(m.slug)) continue
+    const newSlug = await allocateMovieSlug(m.title, prisma)
+    await prisma.movie.update({ where: { id: m.id }, data: { slug: newSlug } })
+    fixed++
+  }
 
   revalidateMovieLists()
   for (const m of rows) {
