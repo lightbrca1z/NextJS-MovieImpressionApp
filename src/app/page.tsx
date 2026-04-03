@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
+import { auth } from '@/auth'
+import { LoginForm } from '@/components/LoginForm'
 import { prisma } from '@/lib/prisma'
 import { MoviesListSearch } from '@/components/MoviesListSearch'
 import { MoviesPagination } from '@/components/MoviesPagination'
@@ -9,6 +11,25 @@ import { MOVIES_PAGE_SIZE, clampPage, parseListPage, titleSearchWhere } from '@/
 type Props = { searchParams: Promise<{ q?: string; page?: string }> }
 
 export default async function HomePage({ searchParams }: Props) {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return (
+      <>
+        <h1 className="page-title">ログイン</h1>
+        <p className="page-lead">
+          Movie Impression にサインインして、映画ごとに母国語と学習言語で感想を投稿・閲覧しましょう。
+        </p>
+        <Suspense fallback={<div className="form-panel">フォームを読み込み中…</div>}>
+          <LoginForm />
+        </Suspense>
+        <p className="page-lead" style={{ marginTop: '1.25rem' }}>
+          アカウントがまだの方は <Link href="/register">新規登録</Link> へ。
+        </p>
+      </>
+    )
+  }
+
   const { q, page: pageRaw } = await searchParams
   const query = (q ?? '').trim()
   const page = parseListPage(pageRaw)
