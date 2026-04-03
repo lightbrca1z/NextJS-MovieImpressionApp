@@ -5,13 +5,15 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { MoviesListSearch } from '@/components/MoviesListSearch'
+import { MoviesTitleScriptSort } from '@/components/MoviesTitleScriptSort'
 import { MoviesPagination } from '@/components/MoviesPagination'
 import { movieDetailPath } from '@/lib/moviePath'
+import { findMoviesPageWithTitleScriptOrder, parseTitleScriptSort, titleScriptToParam } from '@/lib/movieTitleSort'
 import { MOVIES_PAGE_SIZE, clampPage, parseListPage, titleSearchWhere } from '@/lib/moviesListPaging'
 
 export type MoviesListVariant = 'catalog' | 'everyone' | 'mine'
 
-type SearchInput = { q?: string; allq?: string; page?: string; allPage?: string }
+type SearchInput = { q?: string; allq?: string; page?: string; allPage?: string; titleScript?: string }
 
 type Props = {
   variant: MoviesListVariant
@@ -23,11 +25,13 @@ type MovieWithReviewCount = Prisma.MovieGetPayload<{
 }>
 
 export async function MoviesListContent({ variant, searchParams }: Props) {
-  const { q, allq, page: pageRaw, allPage: allPageRaw } = await searchParams
+  const { q, allq, page: pageRaw, allPage: allPageRaw, titleScript: titleScriptRaw } = await searchParams
   const query = (q ?? '').trim()
   const allQuery = (allq ?? '').trim()
   const page = parseListPage(pageRaw)
   const allPage = parseListPage(allPageRaw)
+  const titleSortMode = parseTitleScriptSort(titleScriptRaw)
+  const titleScriptParam = titleScriptToParam(titleSortMode)
   const session = await auth()
   const mineOnly = variant === 'mine'
 
@@ -55,11 +59,11 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
     const whereMain = { ...baseWhere, ...(titleQ ?? {}) }
     mainTotalFiltered = await prisma.movie.count({ where: whereMain })
     safeMainPage = clampPage(page, mainTotalFiltered)
-    mainMovies = await prisma.movie.findMany({
+    mainMovies = await findMoviesPageWithTitleScriptOrder({
+      db: prisma,
       where: whereMain,
-      orderBy: { title: 'asc' },
-      skip: (safeMainPage - 1) * MOVIES_PAGE_SIZE,
-      take: MOVIES_PAGE_SIZE,
+      page: safeMainPage,
+      mode: titleSortMode,
       include: {
         _count: {
           select: {
@@ -73,11 +77,11 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
     const whereCatalog = { ...(titleQ ?? {}) }
     mainTotalFiltered = await prisma.movie.count({ where: whereCatalog })
     safeMainPage = clampPage(page, mainTotalFiltered)
-    mainMovies = await prisma.movie.findMany({
+    mainMovies = await findMoviesPageWithTitleScriptOrder({
+      db: prisma,
       where: whereCatalog,
-      orderBy: { title: 'asc' },
-      skip: (safeMainPage - 1) * MOVIES_PAGE_SIZE,
-      take: MOVIES_PAGE_SIZE,
+      page: safeMainPage,
+      mode: titleSortMode,
       include: {
         _count: { select: { reviews: true } },
       },
@@ -96,11 +100,11 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
     const whereAll = { ...(titleAllQ ?? {}) }
     allCatalogTotalFiltered = await prisma.movie.count({ where: whereAll })
     safeAllPage = clampPage(allPage, allCatalogTotalFiltered)
-    allCatalogMovies = await prisma.movie.findMany({
+    allCatalogMovies = await findMoviesPageWithTitleScriptOrder({
+      db: prisma,
       where: whereAll,
-      orderBy: { title: 'asc' },
-      skip: (safeAllPage - 1) * MOVIES_PAGE_SIZE,
-      take: MOVIES_PAGE_SIZE,
+      page: safeAllPage,
+      mode: titleSortMode,
       include: {
         _count: { select: { reviews: true } },
       },
@@ -141,9 +145,11 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
           ...(query ? { q: query } : {}),
           ...(allQuery ? { allq: allQuery } : {}),
           ...(safeAllPage > 1 ? { allPage: String(safeAllPage) } : {}),
+          ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
         }
       : {
           ...(query ? { q: query } : {}),
+          ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
         }
 
   const catalogExtraParams: Record<string, string | undefined> = {
@@ -151,6 +157,7 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
     ...(query ? { q: query } : {}),
     ...(allQuery ? { allq: allQuery } : {}),
     ...(safeMainPage > 1 ? { page: String(safeMainPage) } : {}),
+    ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
   }
 
   return (
@@ -173,12 +180,17 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
           >
             {sectionTitle}
           </h2>
-          <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
-            <MoviesListSearch
-              param="q"
-              inputId={mineOnly ? 'movies-mine-search-q' : 'movies-list-search-input'}
-            />
-          </Suspense>
+          <div className="movies-page__tools">
+            <Suspense fallback={<div className="movies-title-script-sort movies-title-script-sort--skeleton" aria-hidden />}>
+              <MoviesTitleScriptSort />
+            </Suspense>
+            <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
+              <MoviesListSearch
+                param="q"
+                inputId={mineOnly ? 'movies-mine-search-q' : 'movies-list-search-input'}
+              />
+            </Suspense>
+          </div>
         </div>
         {query ? (
           <p className="page-lead movies-page__filter-note">
@@ -228,7 +240,7 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
             </Suspense>
           </div>
           <p className="page-lead movies-page__secondary-lead">
-            投稿の有無にかかわらず登録されているすべての映画です。感想がまだの作品からも投稿できます。1ページあたり {MOVIES_PAGE_SIZE} 件です。
+            投稿の有無にかかわらず登録されているすべての映画です。上段と同じ並び（日本語先／英語先／標準）がここにも適用されます。感想がまだの作品からも投稿できます。1ページあたり {MOVIES_PAGE_SIZE} 件です。
           </p>
           {allQuery ? (
             <p className="page-lead movies-page__filter-note">

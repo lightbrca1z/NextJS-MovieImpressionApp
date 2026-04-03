@@ -4,11 +4,13 @@ import { auth } from '@/auth'
 import { LoginForm } from '@/components/LoginForm'
 import { prisma } from '@/lib/prisma'
 import { MoviesListSearch } from '@/components/MoviesListSearch'
+import { MoviesTitleScriptSort } from '@/components/MoviesTitleScriptSort'
 import { MoviesPagination } from '@/components/MoviesPagination'
 import { movieDetailPath } from '@/lib/moviePath'
+import { findMoviesPageWithTitleScriptOrder, parseTitleScriptSort, titleScriptToParam } from '@/lib/movieTitleSort'
 import { MOVIES_PAGE_SIZE, clampPage, parseListPage, titleSearchWhere } from '@/lib/moviesListPaging'
 
-type Props = { searchParams: Promise<{ q?: string; page?: string }> }
+type Props = { searchParams: Promise<{ q?: string; page?: string; titleScript?: string }> }
 
 export default async function HomePage({ searchParams }: Props) {
   const session = await auth()
@@ -30,9 +32,11 @@ export default async function HomePage({ searchParams }: Props) {
     )
   }
 
-  const { q, page: pageRaw } = await searchParams
+  const { q, page: pageRaw, titleScript: titleScriptRaw } = await searchParams
   const query = (q ?? '').trim()
   const page = parseListPage(pageRaw)
+  const titleSortMode = parseTitleScriptSort(titleScriptRaw)
+  const titleScriptParam = titleScriptToParam(titleSortMode)
 
   const titleQ = titleSearchWhere(query)
   const totalUnfiltered = await prisma.movie.count({ where: {} })
@@ -40,11 +44,11 @@ export default async function HomePage({ searchParams }: Props) {
   const totalFiltered = await prisma.movie.count({ where: whereList })
   const safePage = clampPage(page, totalFiltered)
 
-  const movies = await prisma.movie.findMany({
+  const movies = await findMoviesPageWithTitleScriptOrder({
+    db: prisma,
     where: whereList,
-    orderBy: { title: 'asc' },
-    skip: (safePage - 1) * MOVIES_PAGE_SIZE,
-    take: MOVIES_PAGE_SIZE,
+    page: safePage,
+    mode: titleSortMode,
     include: {
       _count: { select: { reviews: true } },
     },
@@ -68,9 +72,14 @@ export default async function HomePage({ searchParams }: Props) {
           >
             映画一覧
           </h2>
-          <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
-            <MoviesListSearch variant="home" />
-          </Suspense>
+          <div className="movies-page__tools">
+            <Suspense fallback={<div className="movies-title-script-sort movies-title-script-sort--skeleton" aria-hidden />}>
+              <MoviesTitleScriptSort />
+            </Suspense>
+            <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
+              <MoviesListSearch variant="home" />
+            </Suspense>
+          </div>
         </div>
         {query ? (
           <p className="page-lead movies-page__filter-note">
@@ -97,7 +106,10 @@ export default async function HomePage({ searchParams }: Props) {
               currentPage={safePage}
               totalCount={totalFiltered}
               basePath="/"
-              extraParams={query ? { q: query } : {}}
+              extraParams={{
+                ...(query ? { q: query } : {}),
+                ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
+              }}
             />
           </>
         )}

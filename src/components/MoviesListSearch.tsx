@@ -30,11 +30,17 @@ export function MoviesListSearch({
     setValue(searchParams.get(param) ?? '')
   }, [searchParams, param])
 
+  function copyTitleScript(target: URLSearchParams) {
+    const ts = searchParams.get('titleScript')
+    if (ts === 'ja' || ts === 'en') target.set('titleScript', ts)
+  }
+
   function submit(next: string) {
     const trimmed = next.trim()
     if (variant === 'home') {
       const p = new URLSearchParams()
       if (trimmed) p.set('q', trimmed)
+      copyTitleScript(p)
       router.push(p.toString() ? `/?${p.toString()}` : '/')
       return
     }
@@ -42,6 +48,7 @@ export function MoviesListSearch({
     if (pathname === '/movies/everyone') {
       const p = new URLSearchParams()
       if (trimmed) p.set('q', trimmed)
+      copyTitleScript(p)
       const qs = p.toString()
       router.push(qs ? `/movies/everyone?${qs}` : '/movies/everyone')
       return
@@ -61,12 +68,14 @@ export function MoviesListSearch({
           const allqKeep = searchParams.get('allq')
           if (allqKeep?.trim()) mp.set('allq', allqKeep.trim())
         }
+        copyTitleScript(mp)
         const s = mp.toString()
         router.push(s ? `/movies?${s}` : '/movies?scope=mine')
         return
       }
       const p = new URLSearchParams()
       if (trimmed) p.set('q', trimmed)
+      copyTitleScript(p)
       const qs = p.toString()
       router.push(qs ? `/movies?${qs}` : '/movies')
       return
@@ -74,6 +83,7 @@ export function MoviesListSearch({
 
     const p = new URLSearchParams()
     if (trimmed) p.set('q', trimmed)
+    copyTitleScript(p)
     const qs = p.toString()
     router.push(qs ? `/movies?${qs}` : '/movies')
   }
