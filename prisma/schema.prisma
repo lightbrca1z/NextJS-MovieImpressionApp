@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id               String         @id @default(cuid())
+  email            String         @unique
+  passwordHash     String
+  name             String
+  role             UserRole       @default(USER)
+  createdAt        DateTime       @default(now())
+  stripeCustomerId String?        @unique @map("stripe_customer_id")
+  reviews          Review[]
+  subscriptions    Subscription[]
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @map("user_id")
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String    @unique @map("stripe_subscription_id")
+  stripePriceId        String    @map("stripe_price_id")
+  status               String
+  currentPeriodEnd     DateTime? @map("current_period_end")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+model Movie {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  reviews   Review[]
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  titleJa   String
+  bodyJa    String
+  titleEn   String
+  bodyEn    String
+  /** 母国語（titleJa/bodyJa に対応） */
+  langNative String  @default("ja") @map("lang_native")
+  /** 学習言語（titleEn/bodyEn に対応） */
+  langLearn  String  @default("en") @map("lang_learn")
+  createdAt DateTime @default(now())
+
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movieId String
+  movie   Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@index([movieId])
+  @@index([userId])
+}
