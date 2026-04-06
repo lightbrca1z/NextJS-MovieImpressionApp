@@ -53,11 +53,15 @@ export function buildResetPasswordUrl(plainToken: string): string {
 
 type SendResetEmailArgs = { to: string; resetUrl: string }
 
+/** Resend/SMTP が無いとき、リンクをサーバーログに出すか（トークンは消さない） */
 function shouldLogResetLinkToConsole(): boolean {
   if (process.env.NODE_ENV === 'development') return true
   if (process.env.PASSWORD_RESET_LOG_URL === '1' || process.env.PASSWORD_RESET_LOG_URL === 'true') return true
   const o = appOrigin()
-  return /localhost|127\.0\.0\.1/i.test(o)
+  if (/localhost|127\.0\.0\.1/i.test(o)) return true
+  // Vercel 本番でもメール未設定だとここまで来る。ログに URL を出しトークンを保持（実メールはダッシュボードで RESEND/SMTP を設定）
+  if (process.env.VERCEL === '1') return true
+  return false
 }
 
 function resetMailContent(resetUrl: string): { subject: string; html: string; text: string } {
@@ -131,7 +135,15 @@ export async function deliverPasswordResetLink(args: SendResetEmailArgs): Promis
   }
 
   if (shouldLogResetLinkToConsole()) {
-    console.log('\n[password-reset] Resend/SMTP 未設定のため、コンソールに再設定リンクを表示:\n', args.resetUrl, '\n')
+    const hint =
+      process.env.VERCEL === '1'
+        ? '（本番でメール送信するには Vercel の Environment Variables に RESEND_API_KEY または SMTP_* を設定）'
+        : ''
+    console.log(
+      `\n[password-reset] Resend/SMTP 未設定のため、サーバーログに再設定リンクを表示 ${hint}\n`,
+      args.resetUrl,
+      '\n'
+    )
     return { sent: false, devLogged: true }
   }
 
