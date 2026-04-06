@@ -15,9 +15,34 @@ export function resetTokenExpiresAt(): Date {
   return new Date(Date.now() + RESET_TTL_MS)
 }
 
+function trimTrailingSlash(s: string): string {
+  return s.replace(/\/$/, '')
+}
+
+/** パスワード再設定リンクのオリジン。Vercel では VERCEL_URL が自動で入るので localhost にならないようにする。 */
 export function appOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.AUTH_URL?.trim() || 'http://localhost:3000'
-  return raw.replace(/\/$/, '')
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL?.trim(),
+    process.env.AUTH_URL?.trim(),
+    process.env.NEXTAUTH_URL?.trim(),
+  ].filter(Boolean) as string[]
+
+  for (let raw of candidates) {
+    raw = trimTrailingSlash(raw)
+    if (!raw) continue
+    if (!/^https?:\/\//i.test(raw)) {
+      raw = `https://${raw}`
+    }
+    return trimTrailingSlash(raw)
+  }
+
+  const vercel = process.env.VERCEL_URL?.trim()
+  if (vercel) {
+    const host = vercel.replace(/^https?:\/\//i, '')
+    return trimTrailingSlash(`https://${host}`)
+  }
+
+  return 'http://localhost:3000'
 }
 
 export function buildResetPasswordUrl(plainToken: string): string {
