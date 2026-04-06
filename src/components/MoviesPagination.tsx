@@ -2,8 +2,8 @@ import Link from 'next/link'
 import { MOVIES_PAGE_SIZE } from '@/lib/moviesListPaging'
 
 type Props = {
-  /** URL パラメータ名（下段カタログは `allPage`） */
-  paramName?: 'page' | 'allPage'
+  /** URL パラメータ名（下段カタログは `allPage`、みんなの感想ページの上段は `myPage`） */
+  paramName?: 'page' | 'allPage' | 'myPage'
   currentPage: number
   totalCount: number
   basePath: string

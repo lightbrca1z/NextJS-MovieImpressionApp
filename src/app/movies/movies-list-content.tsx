@@ -13,7 +13,16 @@ import { MOVIES_PAGE_SIZE, clampPage, parseListPage, titleSearchWhere } from '@/
 
 export type MoviesListVariant = 'catalog' | 'everyone' | 'mine'
 
-type SearchInput = { q?: string; allq?: string; page?: string; allPage?: string; titleScript?: string }
+type SearchInput = {
+  q?: string
+  allq?: string
+  page?: string
+  allPage?: string
+  /** `/movies/everyone` 上段「みんなの感想」用 */
+  myq?: string
+  myPage?: string
+  titleScript?: string
+}
 
 type Props = {
   variant: MoviesListVariant
@@ -24,12 +33,39 @@ type MovieWithReviewCount = Prisma.MovieGetPayload<{
   include: { _count: { select: { reviews: true } } }
 }>
 
+const everyoneReviewedInclude = {
+  _count: { select: { reviews: true } },
+  reviews: {
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: { user: { select: { name: true } } },
+  },
+} satisfies Prisma.MovieInclude
+
+type MovieEveryoneReviewed = Prisma.MovieGetPayload<{ include: typeof everyoneReviewedInclude }>
+
+function previewSnippet(text: string, maxLen: number): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (t.length <= maxLen) return t
+  return `${t.slice(0, maxLen)}…`
+}
+
 export async function MoviesListContent({ variant, searchParams }: Props) {
-  const { q, allq, page: pageRaw, allPage: allPageRaw, titleScript: titleScriptRaw } = await searchParams
+  const {
+    q,
+    allq,
+    page: pageRaw,
+    allPage: allPageRaw,
+    myq,
+    myPage: myPageRaw,
+    titleScript: titleScriptRaw,
+  } = await searchParams
   const query = (q ?? '').trim()
   const allQuery = (allq ?? '').trim()
+  const myQuery = (myq ?? '').trim()
   const page = parseListPage(pageRaw)
   const allPage = parseListPage(allPageRaw)
+  const myPage = parseListPage(myPageRaw)
   const titleSortMode = parseTitleScriptSort(titleScriptRaw)
   const titleScriptParam = titleScriptToParam(titleSortMode)
   const session = await auth()
@@ -43,6 +79,7 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
 
   const titleQ = titleSearchWhere(query)
   const titleAllQ = titleSearchWhere(allQuery)
+  const titleMyQ = titleSearchWhere(myQuery)
 
   const basePath = variant === 'everyone' ? '/movies/everyone' : '/movies'
 
@@ -52,6 +89,12 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
   let mainTotalUnfiltered = 0
 
   let safeMainPage = 1
+
+  /** `/movies/everyone` 上段：感想が1件以上ある映画（全ユーザー・最新1件をプレビュー） */
+  let everyoneReviewedMovies: MovieEveryoneReviewed[] = []
+  let everyoneReviewedTotalFiltered = 0
+  let everyoneReviewedTotalUnfiltered = 0
+  let safeEveryoneReviewedPage = 1
 
   if (mineOnly && uid) {
     const baseWhere = { reviews: { some: { userId: uid } } }
@@ -73,6 +116,21 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
       },
     })
   } else if (!mineOnly) {
+    if (variant === 'everyone') {
+      const baseEveryoneReviewed = { reviews: { some: {} } }
+      everyoneReviewedTotalUnfiltered = await prisma.movie.count({ where: baseEveryoneReviewed })
+      const whereEveryoneReviewed = { ...baseEveryoneReviewed, ...(titleMyQ ?? {}) }
+      everyoneReviewedTotalFiltered = await prisma.movie.count({ where: whereEveryoneReviewed })
+      safeEveryoneReviewedPage = clampPage(myPage, everyoneReviewedTotalFiltered)
+      everyoneReviewedMovies = await findMoviesPageWithTitleScriptOrder({
+        db: prisma,
+        where: whereEveryoneReviewed,
+        page: safeEveryoneReviewedPage,
+        mode: titleSortMode,
+        include: everyoneReviewedInclude,
+      })
+    }
+
     mainTotalUnfiltered = await prisma.movie.count({ where: {} })
     const whereCatalog = { ...(titleQ ?? {}) }
     mainTotalFiltered = await prisma.movie.count({ where: whereCatalog })
@@ -118,7 +176,8 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
       </>
     ) : variant === 'everyone' ? (
       <>
-        ヘッダーの「みんなの感想」表示中。登録されている映画がすべて並び、件数は全ユーザーの感想の合計です。1ページあたり {MOVIES_PAGE_SIZE} 件です。
+        ヘッダーの「みんなの感想」表示中。上段は感想が投稿されている映画だけです。各タイルには最新の感想タイトル（抜粋）と投稿者名を表示し、件数はその映画の全ユーザーの感想の合計です。下段は登録されている全映画が並び、件数も全ユーザーの合計です。1ページあたり{' '}
+        {MOVIES_PAGE_SIZE} 件です。
       </>
     ) : (
       <>
@@ -134,7 +193,11 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
         : '映画一覧'
 
   const filterScopeNote =
-    variant === 'mine' ? ' 表示は「自分の投稿」一覧です。' : variant === 'everyone' ? ' 表示は「みんなの感想」ページです。' : ' 表示は「映画一覧」です。'
+    variant === 'mine'
+      ? ' 表示は「自分の投稿」一覧です。'
+      : variant === 'everyone'
+        ? ' 表示は下段の「映画一覧(みんなの投稿)」です。'
+        : ' 表示は「映画一覧」です。'
 
   const catalogFilterNote = ' 表示は下段の「映画一覧」（全映画）です。'
 
@@ -150,7 +213,16 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
       : {
           ...(query ? { q: query } : {}),
           ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
+          ...(variant === 'everyone' && myQuery ? { myq: myQuery } : {}),
+          ...(variant === 'everyone' && safeEveryoneReviewedPage > 1 ? { myPage: String(safeEveryoneReviewedPage) } : {}),
         }
+
+  const everyoneReviewedExtraParams: Record<string, string | undefined> = {
+    ...(myQuery ? { myq: myQuery } : {}),
+    ...(query ? { q: query } : {}),
+    ...(safeMainPage > 1 ? { page: String(safeMainPage) } : {}),
+    ...(titleScriptParam ? { titleScript: titleScriptParam } : {}),
+  }
 
   const catalogExtraParams: Record<string, string | undefined> = {
     scope: 'mine',
@@ -167,10 +239,74 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
         {leadBody}
         {variant === 'mine' ? (
           <> それぞれの見出しの右からタイトル検索できます（上段・下段で別々に絞り込めます）。</>
+        ) : variant === 'everyone' ? (
+          <>上段・下段それぞれの見出しの右からタイトル検索できます（別々に絞り込めます）。</>
         ) : (
           <> 下の「映画一覧」の右からタイトル検索もできます。</>
         )}
       </p>
+
+      {variant === 'everyone' ? (
+        <section aria-labelledby="movies-everyone-reviewed-heading">
+          <div className="movies-page__heading-row">
+            <h2
+              id="movies-everyone-reviewed-heading"
+              className="page-title movies-page__title movies-page__title--section"
+            >
+              みんなの感想
+            </h2>
+            <div className="movies-page__tools">
+              <Suspense fallback={<div className="movies-title-script-sort movies-title-script-sort--skeleton" aria-hidden />}>
+                <MoviesTitleScriptSort />
+              </Suspense>
+              <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
+                <MoviesListSearch param="myq" inputId="movies-everyone-reviewed-search-myq" />
+              </Suspense>
+            </div>
+          </div>
+          {myQuery ? (
+            <p className="page-lead movies-page__filter-note">
+              検索「<strong>{myQuery}</strong>」で絞り込み中（タイトルに部分一致、大文字・小文字は区別しません）。
+              {' 表示は上段の「みんなの感想」一覧です。'}
+            </p>
+          ) : null}
+          {everyoneReviewedTotalFiltered === 0 ? (
+            <p className="page-lead">
+              {myQuery && everyoneReviewedTotalUnfiltered > 0
+                ? '検索に一致する映画がありません。別のキーワードを試してください。'
+                : 'まだ感想のついた映画がありません。映画ページから感想を投稿するか、下の「映画一覧(みんなの投稿)」から作品を選んでください。'}
+            </p>
+          ) : (
+            <>
+              <div className="movie-grid">
+                {everyoneReviewedMovies.map((m) => {
+                  const latest = m.reviews[0]
+                  return (
+                    <Link key={m.id} href={movieDetailPath(m.slug)} className="movie-tile">
+                      <h3 className="movie-tile__title">{m.title}</h3>
+                      <p className="movie-tile__count">感想 {m._count.reviews} 件</p>
+                      {latest ? (
+                        <p className="movie-tile__review-preview">
+                          <span className="movie-tile__review-author">{latest.user.name}</span>
+                          {' · '}
+                          {previewSnippet(latest.titleJa, 72)}
+                        </p>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+              <MoviesPagination
+                paramName="myPage"
+                currentPage={safeEveryoneReviewedPage}
+                totalCount={everyoneReviewedTotalFiltered}
+                basePath={basePath}
+                extraParams={everyoneReviewedExtraParams}
+              />
+            </>
+          )}
+        </section>
+      ) : null}
 
       <section aria-labelledby="movies-heading">
         <div className="movies-page__heading-row">
@@ -181,13 +317,17 @@ export async function MoviesListContent({ variant, searchParams }: Props) {
             {sectionTitle}
           </h2>
           <div className="movies-page__tools">
-            <Suspense fallback={<div className="movies-title-script-sort movies-title-script-sort--skeleton" aria-hidden />}>
-              <MoviesTitleScriptSort />
-            </Suspense>
+            {variant === 'everyone' ? null : (
+              <Suspense fallback={<div className="movies-title-script-sort movies-title-script-sort--skeleton" aria-hidden />}>
+                <MoviesTitleScriptSort />
+              </Suspense>
+            )}
             <Suspense fallback={<div className="movies-list-search movies-list-search--skeleton" aria-hidden />}>
               <MoviesListSearch
                 param="q"
-                inputId={mineOnly ? 'movies-mine-search-q' : 'movies-list-search-input'}
+                inputId={
+                  mineOnly ? 'movies-mine-search-q' : variant === 'everyone' ? 'movies-everyone-catalog-search-q' : 'movies-list-search-input'
+                }
               />
             </Suspense>
           </div>

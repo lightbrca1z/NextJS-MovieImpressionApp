@@ -391,6 +391,22 @@ a:hover {
   color: var(--muted);
 }
 
+.movie-tile__review-preview {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.movie-tile__review-author {
+  color: var(--text);
+  font-weight: 500;
+}
+
 .review-card {
   background: var(--surface);
   border: 1px solid var(--border);

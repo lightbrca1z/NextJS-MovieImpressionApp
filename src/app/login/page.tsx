@@ -8,11 +8,16 @@ export const metadata = {
   title: 'ログイン — Movie Impression',
 }
 
-export default async function LoginPage() {
+type Props = { searchParams: Promise<{ reset?: string }> }
+
+export default async function LoginPage({ searchParams }: Props) {
   const session = await auth()
   if (session?.user?.id) {
     redirect('/')
   }
+
+  const sp = await searchParams
+  const passwordResetDone = sp.reset === '1'
 
   return (
     <>
@@ -20,6 +25,11 @@ export default async function LoginPage() {
       <p className="page-lead">
         メールアドレス、または管理者のログイン ID（<strong>Manager</strong>）でサインインできます。
       </p>
+      {passwordResetDone ? (
+        <div className="alert alert--success" role="status" style={{ marginBottom: '1rem' }}>
+          パスワードを更新しました。新しいパスワードでログインしてください。
+        </div>
+      ) : null}
       <Suspense fallback={<div className="form-panel">フォームを読み込み中…</div>}>
         <LoginForm />
       </Suspense>

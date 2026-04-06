@@ -57,6 +57,9 @@ export function LoginForm() {
         </button>
         <Link href="/register">アカウントを作成</Link>
       </div>
+      <p className="page-lead" style={{ marginTop: '1rem', marginBottom: 0 }}>
+        <Link href="/forgot-password">パスワードをお忘れの方</Link>
+      </p>
     </form>
   )
 }

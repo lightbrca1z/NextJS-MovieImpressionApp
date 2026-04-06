@@ -28,6 +28,9 @@ export default async function HomePage({ searchParams }: Props) {
         <p className="page-lead" style={{ marginTop: '1.25rem' }}>
           アカウントがまだの方は <Link href="/register">新規登録</Link> へ。
         </p>
+        <p className="page-lead" style={{ marginTop: '0.75rem' }}>
+          <Link href="/forgot-password">パスワードをお忘れの方（再設定）</Link>
+        </p>
       </>
     )
   }

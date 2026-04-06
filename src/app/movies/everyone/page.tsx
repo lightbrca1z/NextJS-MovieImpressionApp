@@ -1,6 +1,8 @@
 import { MoviesListContent } from '@/app/movies/movies-list-content'
 
-type Props = { searchParams: Promise<{ q?: string; page?: string; titleScript?: string }> }
+type Props = {
+  searchParams: Promise<{ q?: string; page?: string; myq?: string; myPage?: string; titleScript?: string }>
+}
 
 /** みんなの感想（映画グリッド・全ユーザーの件数） */
 export default async function MoviesEveryonePage({ searchParams }: Props) {

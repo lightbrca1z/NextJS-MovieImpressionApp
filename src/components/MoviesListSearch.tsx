@@ -9,8 +9,9 @@ type MoviesListSearchProps = {
   /**
    * URL 上の検索パラメータ名。
    * `allq` は `/movies?scope=mine` の下段「映画一覧」用（上段は `q`）
+   * `myq` は `/movies/everyone` の上段「みんなの感想」用
    */
-  param?: 'q' | 'allq'
+  param?: 'q' | 'allq' | 'myq'
   /** アクセシビリティ用（同一ページに2フォームあるとき） */
   inputId?: string
 }
@@ -47,8 +48,20 @@ export function MoviesListSearch({
 
     if (pathname === '/movies/everyone') {
       const p = new URLSearchParams()
-      if (trimmed) p.set('q', trimmed)
       copyTitleScript(p)
+      if (param === 'myq') {
+        if (trimmed) p.set('myq', trimmed)
+        const qKeep = searchParams.get('q')
+        if (qKeep?.trim()) p.set('q', qKeep.trim())
+        const pageKeep = searchParams.get('page')
+        if (pageKeep && parseInt(pageKeep, 10) > 1) p.set('page', pageKeep)
+      } else {
+        if (trimmed) p.set('q', trimmed)
+        const myqKeep = searchParams.get('myq')
+        if (myqKeep?.trim()) p.set('myq', myqKeep.trim())
+        const myPageKeep = searchParams.get('myPage')
+        if (myPageKeep && parseInt(myPageKeep, 10) > 1) p.set('myPage', myPageKeep)
+      }
       const qs = p.toString()
       router.push(qs ? `/movies/everyone?${qs}` : '/movies/everyone')
       return

@@ -21,6 +21,7 @@ export function MoviesTitleScriptSort() {
     }
     p.delete('page')
     p.delete('allPage')
+    p.delete('myPage')
 
     const qs = p.toString()
 
